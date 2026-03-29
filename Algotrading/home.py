@@ -166,12 +166,13 @@ print(data[['Close', 'EMA_5','EMA_13','EMA_26','EMA_50','BB_Upper','SMA_20','BB_
 # Strategy logic 
 # ========================================================================================================================
 
-data['Signal'] = 0
+data['Signal'] = -1
+# no buy and no sell returns -1
 
-# BUY
-data.loc[(data['EMA_13'] > data['EMA_50']) ,'Signal'] = 1
+# BUY returns 1
+data.loc[(data['EMA_5'] > data['EMA_13']) & (data['EMA_13'] > data['EMA_26']) & (data['EMA_26'] > data['EMA_50']) ,'Signal'] = 1
 
-# SELL
-data.loc[(data['EMA_13'] < data['EMA_50']) ,'Signal'] = -1
+# SELL returns 0
+data.loc[(data['EMA_5'] < data['EMA_13']) & (data['EMA_13'] < data['EMA_26']) & (data['EMA_26'] > data['EMA_50']) ,'Signal'] = 0
 
 print(data[['Close','Signal']].tail())
