@@ -161,3 +161,15 @@ data[cols] = data[cols].round(2)
 
 
 print(data[['Close', 'EMA_5','EMA_13','EMA_26','EMA_50','BB_Upper','SMA_20','BB_Lower','MACD','Signal','Histogram','%K', '%D','RSI_14','+DI', '-DI', 'ADX']].tail())
+
+# ========================================================================================================================
+# Strategy logic 
+# ========================================================================================================================
+
+# BUY
+data.loc[(data['EMA_13'] > data['EMA_50']) ,'Signal'] = 1
+
+# SELL
+data.loc[(data['EMA_13'] < data['EMA_50']) ,'Signal'] = -1
+
+print(data[['Close','Signal']].tail())
