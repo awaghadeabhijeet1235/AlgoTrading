@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 # Select stock (NSE example)
 symbol = "RELIANCE.NS"
 
-# Define exact date range (5 months back)
+# Define exact date range (5 days back)
 end_date = datetime.today()
 start_date = end_date - timedelta(days=50)
 
@@ -165,6 +165,8 @@ print(data[['Close', 'EMA_5','EMA_13','EMA_26','EMA_50','BB_Upper','SMA_20','BB_
 # ========================================================================================================================
 # Strategy logic 
 # ========================================================================================================================
+
+data['Signal'] = 0
 
 # BUY
 data.loc[(data['EMA_13'] > data['EMA_50']) ,'Signal'] = 1
