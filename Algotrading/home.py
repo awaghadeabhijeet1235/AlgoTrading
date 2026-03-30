@@ -10,26 +10,33 @@ symbol = "RELIANCE.NS"
 end_date = datetime.today()
 start_date = end_date - timedelta(days=50)
 
-# Fetch data
-data = yf.download(symbol,start=start_date,end=end_date,interval="1d")
+# Fetch wave
+wave = yf.download(symbol,start=start_date,end=end_date,interval="1d")
+# Fetch tide
+tide = yf.download(symbol,start=start_date,end=end_date,interval="1wk")
 
 # Keep only OHLCV columns
-ohlcv = data[['Open', 'High', 'Low', 'Close', 'Volume']]
+ohlcv = wave[['Open', 'High', 'Low', 'Close', 'Volume']]
 
 # ========================================================================================================================
 # EMA 5, 13, 26, 50 & 12 for MACD 
 # ========================================================================================================================
-data['Close'] = data['Close'].round(2)
+wave['Close'] = wave['Close'].round(2)
+tide['Close'] = tide['Close'].round(2)
 # Calculate EMA 5
-data['EMA_5'] = data['Close'].ewm(span=5, adjust=False).mean().round(2)
+wave['EMA_5'] = wave['Close'].ewm(span=5, adjust=False).mean().round(2)
 # Fast EMA (12)
-data['EMA_12'] = data['Close'].ewm(span=12, adjust=False).mean().round(2)
+wave['EMA_12'] = wave['Close'].ewm(span=12, adjust=False).mean().round(2)
+# Fast EMA (12) tide
+tide['EMA_12'] = tide['Close'].ewm(span=12, adjust=False).mean().round(2)
 # Calculate EMA 13
-data['EMA_13'] = data['Close'].ewm(span=13, adjust=False).mean().round(2)
+wave['EMA_13'] = wave['Close'].ewm(span=13, adjust=False).mean().round(2)
 # Calculate EMA 26
-data['EMA_26'] = data['Close'].ewm(span=26, adjust=False).mean().round(2)
+wave['EMA_26'] = wave['Close'].ewm(span=26, adjust=False).mean().round(2)
+# Calculate EMA 26
+tide['EMA_26'] = tide['Close'].ewm(span=26, adjust=False).mean().round(2)
 # Calculate EMA 50
-data['EMA_50'] = data['Close'].ewm(span=50, adjust=False).mean().round(2)
+wave['EMA_50'] = wave['Close'].ewm(span=50, adjust=False).mean().round(2)
 # ========================================================================================================================
 # EMA 5, 13, 26, 50 & 12 for MACD logic end
 # ========================================================================================================================
@@ -38,18 +45,36 @@ data['EMA_50'] = data['Close'].ewm(span=50, adjust=False).mean().round(2)
 # ========================================================================================================================
 # Bolinger Band (20,2) 
 # ========================================================================================================================
-# Bollinger Band settings
+# BB calculation for wave
+
 length = 20
 
 # SMA (20)
-data['SMA_20'] = data['Close'].rolling(window=length).mean()
+wave['SMA_20'] = wave['Close'].rolling(window=length).mean()
 
 # Standard Deviation
-data['STD_20'] = data['Close'].rolling(window=length).std()
+wave['STD_20'] = wave['Close'].rolling(window=length).std()
 
 # Upper & Lower Bands
-data['BB_Upper'] = data['SMA_20'] + (2 * data['STD_20'])
-data['BB_Lower'] = data['SMA_20'] - (2 * data['STD_20'])
+wave['BB_Upper'] = wave['SMA_20'] + (2 * wave['STD_20'])
+wave['BB_Lower'] = wave['SMA_20'] - (2 * wave['STD_20'])
+
+# BB calculation for tide
+length = 20
+
+# SMA (20)
+tide['SMA_20'] = tide['Close'].rolling(window=length).mean()
+
+# Standard Deviation
+tide['STD_20'] = tide['Close'].rolling(window=length).std()
+
+# Upper & Lower Bands
+tide['BB_Upper'] = tide['SMA_20'] + (2 * tide['STD_20'])
+tide['BB_Lower'] = tide['SMA_20'] - (2 * tide['STD_20'])
+
+#print(wave[['Close','BB_Upper','SMA_20','BB_Lower']].tail())
+
+#print(tide[['Close','BB_Upper','SMA_20','BB_Lower']].tail())
 
 # ========================================================================================================================
 # Bolinger Band (20,2) logic end
@@ -60,14 +85,23 @@ data['BB_Lower'] = data['SMA_20'] - (2 * data['STD_20'])
 # MACD (12,26 CLOSE 9 EMA) 
 # ========================================================================================================================
 
-# MACD Line (Oscillator)
-data['MACD'] = data['EMA_12'] - data['EMA_26']
+# MACD Line (Oscillator) wave calculation
+wave['MACD'] = wave['EMA_12'] - wave['EMA_26']
 
 # Signal Line (EMA 9 of MACD)
-data['Signal'] = data['MACD'].ewm(span=9, adjust=False).mean()
+wave['Signal'] = wave['MACD'].ewm(span=9, adjust=False).mean()
 
 # Histogram
-data['Histogram'] = data['MACD'] - data['Signal']
+wave['Histogram'] = wave['MACD'] - wave['Signal']
+
+# MACD Line (Oscillator) tide calculation
+tide['MACD'] = tide['EMA_12'] - tide['EMA_26']
+
+# Signal Line (EMA 9 of MACD)
+tide['Signal'] = tide['MACD'].ewm(span=9, adjust=False).mean()
+
+# Histogram
+tide['Histogram'] = tide['MACD'] - tide['Signal']
 
 # ========================================================================================================================
 # MACD (12,26 CLOSE 9 EMA) logic end
@@ -78,17 +112,17 @@ data['Histogram'] = data['MACD'] - data['Signal']
 # ========================================================================================================================
 
 # Step 1: Lowest Low & Highest High (14)
-low_min = data['Low'].rolling(window=14).min()
-high_max = data['High'].rolling(window=14).max()
+low_min = wave['Low'].rolling(window=14).min()
+high_max = wave['High'].rolling(window=14).max()
 
 # Step 2: Raw %K
-data['%K_raw'] = ((data['Close'] - low_min) / (high_max - low_min)) * 100
+wave['%K_raw'] = ((wave['Close'] - low_min) / (high_max - low_min)) * 100
 
 # Step 3: Smooth %K (3-period SMA)
-data['%K'] = data['%K_raw'].rolling(window=3).mean().round(2)
+wave['%K'] = wave['%K_raw'].rolling(window=3).mean().round(2)
 
 # Step 4: %D (3-period SMA of %K)
-data['%D'] = data['%K'].rolling(window=3).mean().round(2)
+wave['%D'] = wave['%K'].rolling(window=3).mean().round(2)
 
 # ========================================================================================================================
 # STOCHASTIC (14,3,3) logic end
@@ -98,7 +132,7 @@ data['%D'] = data['%K'].rolling(window=3).mean().round(2)
 # RSI (14)
 # ========================================================================================================================
 
-delta = data['Close'].diff()
+delta = wave['Close'].diff()
 
 gain = delta.clip(lower=0)
 loss = -delta.clip(upper=0)
@@ -107,7 +141,7 @@ avg_gain = gain.ewm(span=14, adjust=False).mean()
 avg_loss = loss.ewm(span=14, adjust=False).mean()
 
 rs = avg_gain / avg_loss
-data['RSI_14'] = 100 - (100 / (1 + rs))
+wave['RSI_14'] = 100 - (100 / (1 + rs))
 
 # ========================================================================================================================
 # RSI (14)logic end
@@ -120,65 +154,70 @@ data['RSI_14'] = 100 - (100 / (1 + rs))
 length1 = 14
 
 # Step 1: True Range (TR)
-data['H-L'] = data['High'] - data['Low']
-data['H-PC'] = abs(data['High'] - data['Close'].shift(1))
-data['L-PC'] = abs(data['Low'] - data['Close'].shift(1))
+wave['H-L'] = wave['High'] - wave['Low']
+wave['H-PC'] = abs(wave['High'] - wave['Close'].shift(1))
+wave['L-PC'] = abs(wave['Low'] - wave['Close'].shift(1))
 
-data['TR'] = data[['H-L', 'H-PC', 'L-PC']].max(axis=1)
+wave['TR'] = wave[['H-L', 'H-PC', 'L-PC']].max(axis=1)
 
 # Step 2: Directional Movement (+DM, -DM)
-up_move = data['High'].diff()
-down_move = -data['Low'].diff()
+up_move = wave['High'].diff()
+down_move = -wave['Low'].diff()
 
-data['+DM'] = ((up_move > down_move) & (up_move > 0)) * up_move
-data['-DM'] = ((down_move > up_move) & (down_move > 0)) * down_move
+wave['+DM'] = ((up_move > down_move) & (up_move > 0)) * up_move
+wave['-DM'] = ((down_move > up_move) & (down_move > 0)) * down_move
 
 # Step 3: Smooth TR, +DM, -DM (EMA 14)
-tr_smooth = data['TR'].ewm(span=length1, adjust=False).mean()
-plus_dm_smooth = data['+DM'].ewm(span=length1, adjust=False).mean()
-minus_dm_smooth = data['-DM'].ewm(span=length1, adjust=False).mean()
+tr_smooth = wave['TR'].ewm(span=length1, adjust=False).mean()
+plus_dm_smooth = wave['+DM'].ewm(span=length1, adjust=False).mean()
+minus_dm_smooth = wave['-DM'].ewm(span=length1, adjust=False).mean()
 
 # Step 4: +DI and -DI
-data['+DI'] = (plus_dm_smooth / tr_smooth) * 100
-data['-DI'] = (minus_dm_smooth / tr_smooth) * 100
+wave['+DI'] = (plus_dm_smooth / tr_smooth) * 100
+wave['-DI'] = (minus_dm_smooth / tr_smooth) * 100
 
 # Step 5: DX
-data['DX'] = (abs(data['+DI'] - data['-DI']) /
-              (data['+DI'] + data['-DI'])) * 100
+wave['DX'] = (abs(wave['+DI'] - wave['-DI']) /
+              (wave['+DI'] + wave['-DI'])) * 100
 
 # Step 6: ADX (EMA smoothing 14)
-data['ADX'] = data['DX'].ewm(span=length1, adjust=False).mean()
+wave['ADX'] = wave['DX'].ewm(span=length1, adjust=False).mean()
 
 # Round values
 cols = ['+DI', '-DI', 'ADX']
-data[cols] = data[cols].round(2)
+wave[cols] = wave[cols].round(2)
 
-#print(data[['Close', '+DI', '-DI', 'ADX']].tail())
+#print(wave[['Close', '+DI', '-DI', 'ADX']].tail())
 
 # ========================================================================================================================
 # ADX (DI length = 14, smoothing = 14) logic end
 # ========================================================================================================================
 
 
-print(data[['Close', 'EMA_5','EMA_13','EMA_26','EMA_50','BB_Upper','SMA_20','BB_Lower','MACD','Signal','Histogram','%K', '%D','RSI_14','+DI', '-DI', 'ADX']].tail())
+print(wave[['Close', 'EMA_5','EMA_13','EMA_26','EMA_50','BB_Upper','SMA_20','BB_Lower','MACD','Signal','Histogram','%K', '%D','RSI_14','+DI', '-DI', 'ADX']].tail())
 
 # ========================================================================================================================
 # Strategy logic 
 # ========================================================================================================================
 
-data['Signal'] = -1
+wave['Signal_Wave'] = -1
+wave['Signal_Tide'] = -1
 # no buy and no sell returns -1
 
 # BUY returns 1
-data.loc[(data['EMA_5'] > data['EMA_5'].shift(1)) & (data['EMA_13'] > data['EMA_13'].shift(1)) & (data['EMA_26'] > data['EMA_26'].shift(1)) & (data['EMA_5'] > data['EMA_13']) & (data['EMA_13'] > data['EMA_26']) & (data['EMA_26'] > data['EMA_50']) ,'Signal'] = 1
+wave.loc[(wave['EMA_5'] > wave['EMA_5'].shift(1)) & (wave['EMA_13'] > wave['EMA_13'].shift(1)) & (wave['EMA_26'] > wave['EMA_26'].shift(1)) & (wave['EMA_5'] > wave['EMA_13']) & (wave['EMA_13'] > wave['EMA_26']) & (wave['EMA_26'] > wave['EMA_50']) ,'Signal_Wave'] = 1
+
+#tide.loc[(tide['BB_Upper'] > tide['BB_Upper'].shift(1)) & (tide['Close'] > tide['SMA_20']),'Signal_Tide'] = 1
+tide.loc[(tide['BB_Upper'] > tide['BB_Upper'].shift(1)) ,'Signal_Tide'] = 1
+print(wave[['Close','BB_Upper','SMA_20','BB_Lower']])
 
 # SELL returns 0
-data.loc[(data['EMA_5'] < data['EMA_5'].shift(1)) & (data['EMA_13'] < data['EMA_13'].shift(1)) & (data['EMA_26'] < data['EMA_26'].shift(1)) & (data['EMA_5'] < data['EMA_13']) & (data['EMA_13'] < data['EMA_26']) & (data['EMA_26'] < data['EMA_50']) ,'Signal'] = 0
+wave.loc[(wave['EMA_5'] < wave['EMA_5'].shift(1)) & (wave['EMA_13'] < wave['EMA_13'].shift(1)) & (wave['EMA_26'] < wave['EMA_26'].shift(1)) & (wave['EMA_5'] < wave['EMA_13']) & (wave['EMA_13'] < wave['EMA_26']) & (wave['EMA_26'] < wave['EMA_50']) ,'Signal_Wave'] = 0
 
-print(data[['Close','EMA_5','EMA_13','EMA_26','EMA_50','Signal']])
+#print(wave[['Close','EMA_5','EMA_13','EMA_26','EMA_50','Signal_Wave']])
 
-#print only signal = 1 , only buy signals
-print(data.loc[data['Signal'] == 1, ['Close', 'Signal']])
+#print only Signal_Wave = 1 , only buy Signal_Waves and Signal_Tide
+print(wave.loc[(wave['Signal_Wave'] == 1) & (wave['Signal_Tide'] == 1), ['Close', 'Signal_Wave', 'Signal_Tide']])
 
-#print only signal = 0 , only sell signals
-print(data.loc[data['Signal'] == 0, ['Close', 'Signal']])
+#print only Signal_Wave = 0 , only sell Signal_Waves and Signal_Tide
+print(wave.loc[(wave['Signal_Wave'] == 0) & (wave['Signal_Tide'] == 0), ['Close', 'Signal_Wave', 'Signal_Tide']])
