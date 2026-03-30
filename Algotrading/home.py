@@ -170,9 +170,15 @@ data['Signal'] = -1
 # no buy and no sell returns -1
 
 # BUY returns 1
-data.loc[(data['EMA_5'] > data['EMA_13']) & (data['EMA_13'] > data['EMA_26']) & (data['EMA_26'] > data['EMA_50']) ,'Signal'] = 1
+data.loc[(data['EMA_5'] > data['EMA_5'].shift(1)) & (data['EMA_13'] > data['EMA_13'].shift(1)) & (data['EMA_26'] > data['EMA_26'].shift(1)) & (data['EMA_5'] > data['EMA_13']) & (data['EMA_13'] > data['EMA_26']) & (data['EMA_26'] > data['EMA_50']) ,'Signal'] = 1
 
 # SELL returns 0
-data.loc[(data['EMA_5'] < data['EMA_13']) & (data['EMA_13'] < data['EMA_26']) & (data['EMA_26'] > data['EMA_50']) ,'Signal'] = 0
+data.loc[(data['EMA_5'] < data['EMA_5'].shift(1)) & (data['EMA_13'] < data['EMA_13'].shift(1)) & (data['EMA_26'] < data['EMA_26'].shift(1)) & (data['EMA_5'] < data['EMA_13']) & (data['EMA_13'] < data['EMA_26']) & (data['EMA_26'] < data['EMA_50']) ,'Signal'] = 0
 
-print(data[['Close','Signal']].tail())
+print(data[['Close','EMA_5','EMA_13','EMA_26','EMA_50','Signal']])
+
+#print only signal = 1 , only buy signals
+print(data.loc[data['Signal'] == 1, ['Close', 'Signal']])
+
+#print only signal = 0 , only sell signals
+print(data.loc[data['Signal'] == 0, ['Close', 'Signal']])
