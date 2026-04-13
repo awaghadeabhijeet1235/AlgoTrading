@@ -1,22 +1,126 @@
 import pandas as pd
 import numpy as np
-import yfinance as yf
+import requests
+from datetime import datetime
+
+# =========================
+# CONFIG
+# =========================
+client_id = "1111077247"
+access_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzc2MTAwNzMyLCJpYXQiOjE3NzYwMTQzMzIsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTExMDc3MjQ3In0.d_LyApHgUpLSPy8PaTMS2xPZe-SEc8v1g5UP0gB2i-BPqyOWD2kVloK0EkH32lMb5HeR5w7Rs5JRT0P9XMfVag"
+
 
 INITIAL_CAPITAL = 100000
-RISK_PER_TRADE = 0.015
-MAX_DRAWDOWN = 0.10
-symbols =  [
-    'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'HINDUNILVR.NS',
-    'ICICIBANK.NS', 'SBIN.NS', 'BAJFINANCE.NS', 'BHARTIARTL.NS', 'KOTAKBANK.NS',
-    'ITC.NS', 'LT.NS', 'HCLTECH.NS', 'AXISBANK.NS', 'ASIANPAINT.NS',
-    'MARUTI.NS', 'SUNPHARMA.NS', 'TITAN.NS', 'BAJAJFINSV.NS', 'ADANIENT.NS',
-    'ULTRACEMCO.NS', 'NESTLEIND.NS', 'POWERGRID.NS', 'WIPRO.NS',#'TATAMOTORS.NS',
-    'M&M.NS', 'GRASIM.NS', 'ADANIPORTS.NS', 'NTPC.NS', 'HDFCLIFE.NS',
-    'BAJAJ-AUTO.NS', 'COALINDIA.NS', 'TATASTEEL.NS', 'SBILIFE.NS', 'IOC.NS',
-    'TECHM.NS', 'BRITANNIA.NS', 'HEROMOTOCO.NS', 'ONGC.NS', 'DIVISLAB.NS',
-    'INDUSINDBK.NS', 'EICHERMOT.NS', 'CIPLA.NS', 'APOLLOHOSP.NS', 'DRREDDY.NS',
-    'UPL.NS', 'TATACONSUM.NS', 'JSWSTEEL.NS', 'HINDALCO.NS', 'BPCL.NS'
-]
+
+symbol_map = {
+    "RELIANCE.NS": "1333",
+    "TCS.NS": "11536",
+    "INFY.NS": "1594",
+    #"HDFCBANK.NS": "1330",
+    "ICICIBANK.NS": "4963",
+    "SBIN.NS": "3045",
+    "BHARTIARTL.NS": "10604",
+    "ITC.NS": "1660",
+    "KOTAKBANK.NS": "1922",
+    "LT.NS": "11483",
+    "AXISBANK.NS": "5900",
+    "HINDUNILVR.NS": "1394",
+    "BAJFINANCE.NS": "317",
+    "ASIANPAINT.NS": "236",
+    "MARUTI.NS": "10999",
+    "SUNPHARMA.NS": "3351",
+    "TITAN.NS": "3506",
+    "WIPRO.NS": "3787",
+    "ULTRACEMCO.NS": "11532",
+    "NESTLEIND.NS": "17963",
+    "POWERGRID.NS": "14977",
+    "NTPC.NS": "11630",
+    "TECHM.NS": "13538",
+    "TATASTEEL.NS": "3499",
+    "JSWSTEEL.NS": "11723",
+    "HCLTECH.NS": "7229",
+    "ADANIENT.NS": "25",
+    "ADANIPORTS.NS": "10217",
+    "COALINDIA.NS": "20374",
+    "INDUSINDBK.NS": "5258",
+    "DRREDDY.NS": "881",
+    "CIPLA.NS": "694",
+    "HEROMOTOCO.NS": "1348",
+    "BAJAJ-AUTO.NS": "16669",
+    "EICHERMOT.NS": "910",
+    "APOLLOHOSP.NS": "157",
+    "BRITANNIA.NS": "547",
+    "DIVISLAB.NS": "10940",
+    "GRASIM.NS": "1232",
+    "HDFCLIFE.NS": "4244",
+    "SBILIFE.NS": "21808",
+    "BAJAJFINSV.NS": "16675",
+    "ONGC.NS": "2475",
+    "BPCL.NS": "526",
+    "HINDALCO.NS": "1363",
+    "UPL.NS": "11287",
+    "TATACONSUM.NS": "3432",
+    "M&M.NS": "2031",
+    "DLF.NS": "14732",
+    "LTIM.NS": "17130"
+}
+    
+   
+symbols = list(symbol_map.keys())
+
+# =========================
+# FETCH DATA FROM DHAN
+# =========================
+def fetch_data(security_id):
+
+    url = "https://api.dhan.co/v2/charts/historical"
+
+    headers = {
+        "access-token": access_token,
+        "client-id": client_id,
+        "Content-Type": "application/json"
+    }
+
+    # =========================
+    # FETCH 1-dily DATA
+    # =========================
+    payload = {
+        "securityId": security_id,
+        "exchangeSegment": "NSE_EQ",
+        "instrument": "EQUITY",
+        "interval": "1d",
+        "oi": False,
+        "fromDate": "2020-01-05",
+        "toDate": "2026-02-09"
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+
+    print("Status Code:", response.status_code)
+
+    data = response.json()
+
+    if "open" not in data or len(data["open"]) == 0:
+        raise Exception("No data received from Dhan API")
+
+    # =========================
+    # CREATE DATAFRAME (1-daily)
+    # =========================
+    df = pd.DataFrame({
+        "open": data["open"],
+        "high": data["high"],
+        "low": data["low"],
+        "close": data["close"],
+        "volume": data["volume"],
+        "timestamp": data["timestamp"]
+    })
+
+    # Convert timestamp
+    df["datetime"] = pd.to_datetime(df["timestamp"], unit="s")
+    df = df.sort_values("datetime")
+    df.set_index("datetime", inplace=True)
+
+    return df[["open", "high", "low", "close", "volume"]]
 
 # =========================
 # INDICATORS
@@ -27,40 +131,30 @@ class Indicators:
     def calculate(df):
         df = df.copy()
 
-        # Bollinger Bands
-        sma = df['close'].rolling(20).mean()
-        std = df['close'].rolling(20).std()
-        df['bb_upper'] = sma + 2 * std
-        df['bb_lower'] = sma - 2 * std
+        df["bb_mid"] = df["close"].rolling(20).mean()
+        df["bb_std"] = df["close"].rolling(20).std()
+        df["bb_upper"] = df["bb_mid"] + 2 * df["bb_std"]
+        df["bb_lower"] = df["bb_mid"] - 2 * df["bb_std"]
 
-        # EMAs
-        for l in [5, 13, 26, 50]:
-            df[f'ema{l}'] = df['close'].ewm(span=l, adjust=False).mean()
+        df["ema5"] = df["close"].ewm(span=5).mean()
+        df["ema12"] = df["close"].ewm(span=12).mean()
+        df["ema13"] = df["close"].ewm(span=13).mean()
+        df["ema26"] = df["close"].ewm(span=26).mean()
+        df["ema50"] = df["close"].ewm(span=50).mean()
 
-        # Volume MA
-        df['vol_ma'] = df['volume'].rolling(20).mean()
-
-        # MACD
-        ema12 = df['close'].ewm(span=12).mean()
-        ema26 = df['close'].ewm(span=26).mean()
-        df['macd'] = ema12 - ema26
+        df["vol_ma"] = df["volume"].rolling(20).mean()
+        df['macd'] = df["ema12"] - df["ema26"]
         df['macd_signal'] = df['macd'].ewm(span=9).mean()
-
-        # RSI
-        delta = df['close'].diff()
+        delta = df["close"].diff()
         gain = delta.clip(lower=0).rolling(14).mean()
         loss = -delta.clip(upper=0).rolling(14).mean()
         rs = gain / loss
-        df['rsi'] = 100 - (100 / (1 + rs))
-
-        # ADX
+        df["rsi"] = 100 - (100 / (1 + rs))
         high, low, close = df['high'], df['low'], df['close']
         plus_dm = high.diff()
         minus_dm = low.diff() * -1
-
         plus_dm[plus_dm < 0] = 0
         minus_dm[minus_dm < 0] = 0
-
         tr = pd.concat([
             high - low,
             (high - close.shift()).abs(),
@@ -72,12 +166,10 @@ class Indicators:
         df['minus_di'] = 100 * (minus_dm.rolling(14).mean() / atr)
         df['adx'] = (abs(df['plus_di'] - df['minus_di']) /
                      (df['plus_di'] + df['minus_di'])) * 100
-
         return df
 
-
 # =========================
-# SIGNAL ENGINE
+# STRATEGY (UNCHANGED)
 # =========================
 class Strategy:
 
@@ -85,159 +177,319 @@ class Strategy:
         self.wave = Indicators.calculate(wave)
         self.tide = Indicators.calculate(tide)
 
-    def buy_signal(self, i):
-        w = self.wave.iloc[i]
-        t = self.tide.iloc[i]
+    # =========================
+    # SIGNAL GENERATION
+    # =========================
+    def generate_signals(self):
 
-        conds = [
-            t['close'] > w['bb_upper'] * 0.80,
-            t['macd'] > 0,
-            t['macd'] > self.tide['macd'].iloc[i-1] and t['macd'] > self.tide['macd'].iloc[i-2],
-            t['rsi'] > 50,
-            w['rsi'] > 60 and self.wave['rsi'].iloc[i-1] <= 60 ,#self.wave['rsi'].iloc[i-2] < 60,
-            w['close'] >= w['bb_upper'] * 0.90 and w['close'] > self.wave['close'].iloc[i-1],
-            w['volume'] > w['vol_ma'],
-            w['ema5'] >= w['ema13'] or w['ema5'] >= w['ema26'],
-            w['plus_di'] > w['minus_di'],
-            w['adx'] > 15 and w['adx'] > self.wave['adx'].iloc[i-1],
-            w['close'] > w['ema50']
-        ]
+        signals = []
 
-        return all(conds)
+        for i in range(len(self.wave)):
 
-    def sell_signal(self, i):
-        w = self.wave.iloc[i]
-        t = self.tide.iloc[i]
+            if i < 50:
+                continue
 
-        conds = [
-            t['close'] < w['bb_lower'] * 1.20,
-            t['macd'] < 0,
-            t['macd'] < self.tide['macd'].iloc[i-1] and t['macd'] < self.tide['macd'].iloc[i-2],
-            t['rsi'] < 50,
-            w['rsi'] < 40 and self.wave['rsi'].iloc[i-1] >= 40,
-            w['close'] <= w['bb_lower'] * 1.10 and w['close'] < self.wave['close'].iloc[i-1],
-            w['volume'] > w['vol_ma'],
-            w['ema5'] < w['ema13'] or w['ema5'] <= w['ema26'],
-            w['plus_di'] < w['minus_di'],
-            w['adx'] > 15 and w['adx'] > self.wave['adx'].iloc[i-1],
-            w['close'] < w['ema50']
-        ]
+            w = self.wave.iloc[i]
+            time = self.wave.index[i]
 
-        return all(conds)
+            t = self.tide.loc[:time].iloc[-1]
 
+            # =========================
+            # BUY CONDITIONS
+            # =========================
+            buy_conds = [
+                t['close'] > w['bb_upper'] * 0.80,
+                t['macd'] > 0,
+                t['rsi'] > 50,
+                w['rsi'] > 60 and self.wave['rsi'].iloc[i-1] <= 60,
+                w['close'] >= w['bb_upper'] * 0.90 and w['close'] > self.wave['close'].iloc[i-1],
+                w['volume'] > w['vol_ma'],
+                w['ema5'] >= w['ema13'] or w['ema5'] >= w['ema26'],
+                w['plus_di'] > w['minus_di'],
+                w['adx'] > 15 and w['adx'] > self.wave['adx'].iloc[i-1],
+                w['close'] > w['ema50']
+            ]
 
-# =========================
-# PAPER TRADING (BACKTEST)
-# =========================
-def paper_trading(symbol):
+            # =========================
+            # SELL CONDITIONS
+            # =========================
+            sell_conds = [
+                t['close'] < w['bb_lower'] * 1.20,
+                t['macd'] < 0,
+                t['rsi'] < 50,
+                w['rsi'] < 40 and self.wave['rsi'].iloc[i-1] >= 40,
+                w['close'] <= w['bb_lower'] * 1.10 and w['close'] < self.wave['close'].iloc[i-1],
+                w['volume'] > w['vol_ma'],
+                w['ema5'] < w['ema13'] or w['ema5'] <= w['ema26'],
+                w['plus_di'] < w['minus_di'],
+                w['adx'] > 15 and w['adx'] > self.wave['adx'].iloc[i-1],
+                w['close'] < w['ema50']
+            ]
 
-    capital = INITIAL_CAPITAL
-    peak = capital
-    trades = []
-    trade_dates = []
+            if all(buy_conds):
+                signals.append({
+                    "i": i,
+                    "date": time,
+                    "signal": "BUY"
+                })
 
-    data = yf.download(symbol, period="5y", interval="1d")
+            elif all(sell_conds):
+                signals.append({
+                    "i": i,
+                    "date": time,
+                    "signal": "SELL"
+                })
 
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.get_level_values(0)
+        return pd.DataFrame(signals)
 
-    data.columns = [col.lower() for col in data.columns]
-    data = data[['open', 'high', 'low', 'close', 'volume']]
+    # =========================
+    # PAPER TRADING ENGINE
+    # =========================
+    def paper_trading(self, initial_capital=100000):
 
-    wave = data.copy()
-    tide = data.resample('1W').agg({
-        'open': 'first',
-        'high': 'max',
-        'low': 'min',
-        'close': 'last',
-        'volume': 'sum'
-    }).dropna()
+        signals = self.generate_signals()
 
-    tide = tide.reindex(wave.index, method='ffill')
+        capital = initial_capital
 
-    strat = Strategy(wave, tide)
+        position = 0
+        entry_price = 0
+        entry_type = None
 
-    position = None
+        trades = []
 
-    for i in range(50, len(wave)):
+        for _, row in signals.iterrows():
 
-        if capital < INITIAL_CAPITAL * (1 - MAX_DRAWDOWN):
-            print("Max drawdown hit")
-            break
+            i = int(row["i"])
 
-        price = wave['close'].iloc[i]
+            current = self.wave.iloc[i]
+            prev = self.wave.iloc[i - 1]
 
-        # ENTRY
-        if position is None:
+            close = current["close"]
+            prev_open = prev["open"]
 
-            if strat.buy_signal(i):
-                position = ("LONG", price)
+            # =========================
+            # ENTRY
+            # =========================
+            if position == 0:
 
-            elif strat.sell_signal(i):
-                position = ("SHORT", price)
+                # =========================
+                # POSITION SIZING (2% RISK)
+                # =========================
+                risk_amount = capital * 0.02
+                sl_price = close * 0.98  # 2% price SL
+                risk_per_share = abs(close - sl_price)
 
-        # EXIT
-        else:
-            direction, entry = position
+                if risk_per_share == 0:
+                    continue
 
-            pnl = (price - entry) if direction == "LONG" else (entry - price)
+                position_size = risk_amount / risk_per_share
 
-            pnl_pct = pnl / entry
+                # cap exposure (safety)
+                max_position = capital / close
+                position_size = min(position_size, max_position)
 
-            # Partial exit
-            if pnl_pct > 0.01:
-                capital += pnl * 0.5
+                # =========================
+                # LONG ENTRY
+                # =========================
+                if row["signal"] == "BUY":
 
-            # Exit condition
-            if pnl_pct < -0.015 or abs(pnl_pct) > 0.02:
-                capital += pnl
-                trades.append(pnl)
+                    entry_price = close
+                    entry_type = "LONG"
+                    position = position_size
 
-                trade_date = wave.index[i]
-                trade_dates.append(trade_date)
+                    trades.append({
+                        "date": row["date"],
+                        "type": "BUY",
+                        "price": entry_price,
+                        "position": position,
+                        "capital": capital
+                    })
 
-                position = None
+                # =========================
+                # SHORT ENTRY
+                # =========================
+                elif row["signal"] == "SELL":
 
-        peak = max(peak, capital)
+                    entry_price = close
+                    entry_type = "SHORT"
+                    position = position_size
 
-    return trades, capital, trade_dates
+                    trades.append({
+                        "date": row["date"],
+                        "type": "SELL",
+                        "price": entry_price,
+                        "position": position,
+                        "capital": capital
+                    })
 
+            # =========================
+            # EXIT MANAGEMENT
+            # =========================
+            else:
 
-# =========================
-# REAL TRADING (DISABLED)
-# =========================
-def real_trading():
-    print("Real trading disabled for safety.")
+                sl_limit = capital * 0.98  # 2% capital protection
 
+                # =========================
+                # LONG EXIT
+                # =========================
+                if entry_type == "LONG":
 
+                    sl_hit = capital <= sl_limit
+                    trail_exit = close < prev_open
 
+                    if sl_hit or trail_exit:
+
+                        exit_price = close
+                        pnl = (exit_price - entry_price) * position
+                        capital += pnl
+
+                        trades.append({
+                            "date": row["date"],
+                            "type": "SELL",
+                            "price": exit_price,
+                            "position": position,
+                            "pnl": pnl,
+                            "capital": capital,
+                            "reason": "SL" if sl_hit else "TRAIL_EXIT"
+                        })
+
+                        position = 0
+                        entry_price = 0
+                        entry_type = None
+
+                # =========================
+                # SHORT EXIT
+                # =========================
+                elif entry_type == "SHORT":
+
+                    sl_hit = capital <= sl_limit
+                    trail_exit = close > prev_open
+
+                    if sl_hit or trail_exit:
+
+                        exit_price = close
+                        pnl = (entry_price - exit_price) * position
+                        capital += pnl
+
+                        trades.append({
+                            "date": row["date"],
+                            "type": "BUY_COVER",
+                            "price": exit_price,
+                            "position": position,
+                            "pnl": pnl,
+                            "capital": capital,
+                            "reason": "SL" if sl_hit else "TRAIL_EXIT"
+                        })
+
+                        position = 0
+                        entry_price = 0
+                        entry_type = None
+
+        return pd.DataFrame(trades), capital
+
+    # =========================
+    # REPORT
+    # =========================
+    def report(self, trades, final_capital):
+
+        if "pnl" not in trades.columns:
+            print("\nNo completed trades (no exits triggered)")
+            print("Final Capital:", final_capital)
+            return
+
+        exits = trades[trades["type"].isin(["SELL", "BUY_COVER"])]
+
+        if exits.empty:
+            print("\nNo exit trades found")
+            print("Final Capital:", final_capital)
+            return
+
+        total_trades = len(exits)
+        wins = exits[exits["pnl"] > 0]
+        losses = exits[exits["pnl"] <= 0]
+
+        win_rate = (len(wins) / total_trades * 100) if total_trades else 0
+
+        print("\n================ REPORT ================")
+        print("Total Trades:", total_trades)
+        print("Wins:", len(wins))
+        print("Losses:", len(losses))
+        print("Win Rate:", round(win_rate, 2), "%")
+        print("Final Capital:", final_capital)
 
 all_trades = []
-final_capital = 100000
-
+final_capitals = []
 for s in symbols:
-    all_dates = []
-    trades, cap, dates = paper_trading(s)
-    all_trades.extend(trades)
-    all_dates.extend(dates)
-    final_capital += (cap - 100000)
+    print(f"\nRunning: {s}")
+    security_id = symbol_map[s]
 
-print("Final Capital:", final_capital)
+    df_1d = fetch_data(security_id)
 
-wins = [t for t in all_trades if t > 0]
-losses = [t for t in all_trades if t < 0]
+    if df_1d.empty:
+        print("No data, skipping")
+        continue
 
-print("Wins and total trades:", len(wins) , len(all_trades))
-print("Win Rate:", (len(wins)/len(all_trades))*100)
-print("Total Profit:", sum(wins))
-print("Total Loss:", sum(losses))
-unique_days = len(set(all_dates))
+    df_1d = Indicators.calculate(df_1d)
 
-print("Total Trades:", len(all_trades))
-#print("Trading Days:", unique_days)
-#print("Trades per Day:", len(all_trades) / unique_days if unique_days else 0)
+    df_1w = df_1d.resample('1W').agg({
+        "open": "first",
+        "high": "max",
+        "low": "min",
+        "close": "last",
+        "volume": "sum"
+    }).dropna()
 
-df_dates = pd.to_datetime(all_dates)
-months = pd.Series(df_dates).dt.to_period("M")
+    df_1w = Indicators.calculate(df_1w)
 
-#print(months.value_counts().sort_index())
+    strategy = Strategy(df_1d, df_1w)
+
+    trades, final_capital = strategy.paper_trading(initial_capital=100000)
+
+    # ✅ ADD SYMBOL COLUMN
+    trades["symbol"] = s
+
+    # ✅ COLLECT ALL TRADES
+    all_trades.append(trades)
+
+    # ✅ STORE FINAL CAPITAL
+    final_capitals.append(final_capital)
+
+combined_trades = pd.concat(all_trades, ignore_index=True)
+
+def final_report(trades, final_capitals):
+
+    print("\n=========== FINAL COMBINED REPORT ===========")
+
+    if "pnl" not in trades.columns:
+        print("No completed trades found")
+        return
+
+    exits = trades[trades["type"].isin(["SELL", "BUY_COVER"])]
+
+    if exits.empty:
+        print("No exit trades found")
+        return
+
+    total_trades = len(exits)
+    wins = exits[exits["pnl"] > 0]
+    losses = exits[exits["pnl"] <= 0]
+
+    win_rate = (len(wins) / total_trades) * 100
+
+    total_pnl = exits["pnl"].sum()
+
+    print("Total Trades:", total_trades)
+    print("Wins:", len(wins))
+    print("Losses:", len(losses))
+    print("Win Rate:", round(win_rate, 2), "%")
+    print("Total PnL:", round(total_pnl, 2))
+    print("Avg PnL per trade:", round(total_pnl / total_trades, 2))
+
+    print("\nCapital Summary:")
+    print("Avg Final Capital per Stock:", sum(final_capitals)/len(final_capitals))
+    print("Best Stock Capital:", max(final_capitals))
+    print("Worst Stock Capital:", min(final_capitals))
+
+final_report(combined_trades, final_capitals)
+print("\nTop Performing Stocks:")
+print(combined_trades.groupby("symbol")["pnl"].sum().sort_values(ascending=False).head(10))
