@@ -58,7 +58,7 @@ DHAN_TOTP_SECRET  = os.getenv("DHAN_TOTP_SECRET",  "")  # BASE32 secret from Dha
 TOKEN_CACHE_FILE  = "dhan_token_cache.json"
 
 # ─── STRATEGY PARAMETERS ──────────────────────────────────────────────────────
-INITIAL_CAPITAL       = 100_000   # ₹1 lakhs
+INITIAL_CAPITAL       = 500_000   # ₹5 lakhs
 RISK_PCT_PER_TRADE    = 2       # risk 2% of current equity per trade
 OPTION_SL_PCT         = 40.0     # kept for lot-sizing math (risk per trade calculation)
 TRAIL_PCT             = 0.15     # trailing stop: 15% below peak premium
@@ -2257,22 +2257,27 @@ def main():
         epilog="""
 EXAMPLES:
   # Backtest — all indices, 3 years, ATM
-  python dhan_trading_system.py --mode backtest --universe index --from 2022-01-01 --to 2025-12-31 --strike ATM
+  python dhan_trading_system.py --mode backtest --universe index
+      --from 2022-01-01 --to 2024-12-31 --strike ATM
 
   # Backtest — currency + commodity
-  python dhan_trading_system.py --mode backtest --universe currency commodity --from 2022-01-01 --to 2025-12-31
+  python dhan_trading_system.py --mode backtest --universe currency commodity
+      --from 2023-01-01 --to 2024-12-31
 
   # Backtest — selected stocks
-  python dhan_trading_system.py --mode backtest --universe stocks --symbols RELIANCE TCS HDFCBANK --strike OTM1
+  python dhan_trading_system.py --mode backtest --universe stocks
+      --symbols RELIANCE TCS HDFCBANK --strike OTM1
 
   # Backtest — everything
-  python dhan_trading_system.py --mode backtest --universe stocks index currency commodity
+  python dhan_trading_system.py --mode backtest
+      --universe stocks index currency commodity
 
   # Paper trading — indices + currency
   python dhan_trading_system.py --mode paper --universe index currency
 
   # Live trading — NIFTY only (REAL MONEY)
-  python dhan_trading_system.py --mode live --universe index --symbols NIFTY --strike ATM --capital 500000
+  python dhan_trading_system.py --mode live --universe index
+      --symbols NIFTY --strike ATM --capital 500000
         """
     )
     parser.add_argument(
@@ -2292,7 +2297,7 @@ EXAMPLES:
     parser.add_argument("--from",   dest="from_date", default="2022-01-01")
     parser.add_argument("--to",     dest="to_date",   default="2025-12-31")
     parser.add_argument("--strike", default="ATM", choices=["ATM","OTM1","OTM2","ITM1"])
-    parser.add_argument("--capital",type=float, default=100_000)
+    parser.add_argument("--capital",type=float, default=500_000)
     parser.add_argument("--risk",   type=float, default=2,
                         help="Risk %% of capital per trade (default 2)")
     parser.add_argument("--verbose",action="store_true")
@@ -2326,3 +2331,7 @@ EXAMPLES:
 
 if __name__ == "__main__":
     main()
+
+
+
+
