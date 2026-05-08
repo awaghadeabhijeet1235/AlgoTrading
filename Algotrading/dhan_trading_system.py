@@ -138,11 +138,21 @@ INDEX_UNIVERSE: Dict[str, dict] = {
 # NSE Currency options (OPTCUR) — traded on NSE_CURRENCY segment
 # Price data uses IDX_I + INDEX (rolling security IDs 10093-10096 work as index values)
 # Option data uses NSE_CURRENCY + OPTCUR
+#
+# EXPIRY RULES (per NSE circular):
+#   Weekly  → every FRIDAY  (11 serial weekly contracts available at a time)
+#   Monthly → last FRIDAY of the month
+#   When monthly expiry falls on a Friday, there is no separate weekly contract
+#   that week — the monthly contract IS the weekly for that week.
+#   If expiry Friday is a trading holiday → previous trading day is used.
+#
+# expiry_flag = "BOTH"  → engine picks the nearest (weekly or monthly) Friday contract
 CURRENCY_UNIVERSE: Dict[str, dict] = {
-    "USDINR":  {"eq_sid":"10093","opt_sid":10093,"eq_segment":"IDX_I","eq_instrument":"INDEX","opt_segment":"NSE_CURRENCY","opt_instrument":"OPTCUR","lot_size":1000,"strike_interval":0.25,"expiry_flag":"MONTH","product_type":"INTRADAY"},
-    "EURINR":  {"eq_sid":"10094","opt_sid":10094,"eq_segment":"IDX_I","eq_instrument":"INDEX","opt_segment":"NSE_CURRENCY","opt_instrument":"OPTCUR","lot_size":1000,"strike_interval":0.25,"expiry_flag":"MONTH","product_type":"INTRADAY"},
-    "GBPINR":  {"eq_sid":"10095","opt_sid":10095,"eq_segment":"IDX_I","eq_instrument":"INDEX","opt_segment":"NSE_CURRENCY","opt_instrument":"OPTCUR","lot_size":1000,"strike_interval":0.25,"expiry_flag":"MONTH","product_type":"INTRADAY"},
-    "JPYINR":  {"eq_sid":"10096","opt_sid":10096,"eq_segment":"IDX_I","eq_instrument":"INDEX","opt_segment":"NSE_CURRENCY","opt_instrument":"OPTCUR","lot_size":1000,"strike_interval":0.25,"expiry_flag":"MONTH","product_type":"INTRADAY"},
+    # Currency trades 09:00 – 17:00 IST; EOD square-off at 16:45
+    "USDINR":  {"eq_sid":"10093","opt_sid":10093,"eq_segment":"IDX_I","eq_instrument":"INDEX","opt_segment":"NSE_CURRENCY","opt_instrument":"OPTCUR","lot_size":1000,"strike_interval":0.25,"expiry_flag":"BOTH","expiry_day":"FRI","market_open":"09:00","market_close":"17:00","eod_hour":16,"eod_minute":45,"product_type":"INTRADAY"},
+    "EURINR":  {"eq_sid":"10094","opt_sid":10094,"eq_segment":"IDX_I","eq_instrument":"INDEX","opt_segment":"NSE_CURRENCY","opt_instrument":"OPTCUR","lot_size":1000,"strike_interval":0.25,"expiry_flag":"BOTH","expiry_day":"FRI","market_open":"09:00","market_close":"17:00","eod_hour":16,"eod_minute":45,"product_type":"INTRADAY"},
+    "GBPINR":  {"eq_sid":"10095","opt_sid":10095,"eq_segment":"IDX_I","eq_instrument":"INDEX","opt_segment":"NSE_CURRENCY","opt_instrument":"OPTCUR","lot_size":1000,"strike_interval":0.25,"expiry_flag":"BOTH","expiry_day":"FRI","market_open":"09:00","market_close":"17:00","eod_hour":16,"eod_minute":45,"product_type":"INTRADAY"},
+    "JPYINR":  {"eq_sid":"10096","opt_sid":10096,"eq_segment":"IDX_I","eq_instrument":"INDEX","opt_segment":"NSE_CURRENCY","opt_instrument":"OPTCUR","lot_size":1000,"strike_interval":0.25,"expiry_flag":"BOTH","expiry_day":"FRI","market_open":"09:00","market_close":"17:00","eod_hour":16,"eod_minute":45,"product_type":"INTRADAY"},
 }
 
 # MCX Commodity options (OPTFUT) — traded on MCX_COMM segment
@@ -414,6 +424,34 @@ def resample_to_60m(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _resolve_currency_expiry_params(expiry_flag: str, opt_instrument: str) -> tuple:
+    """
+    Return (api_expiry_flag, api_expiry_code) to pass to the Dhan rollingoption API
+    for the given instrument type and expiry_flag config.
+
+    Currency (OPTCUR) specifics:
+      - expiry_flag="BOTH"  → use expiryFlag="WEEK", expiryCode=1
+        This selects the front (nearest) weekly contract. Because the monthly
+        contract IS the front weekly contract in expiry week, this always gives
+        the nearest live contract without needing to distinguish weekly vs monthly.
+      - expiry_flag="WEEK"  → expiryFlag="WEEK",  expiryCode=1
+      - expiry_flag="MONTH" → expiryFlag="MONTH", expiryCode=1
+
+    All other instruments (OPTSTK, OPTIDX, OPTFUT):
+      - Pass expiry_flag through unchanged, expiryCode=1 (front contract).
+    """
+    flag = expiry_flag.upper()
+    if opt_instrument == "OPTCUR":
+        if flag in ("BOTH", "WEEK", "WEEKLY"):
+            return "WEEK", 1   # front weekly = nearest Friday contract
+        else:
+            return "MONTH", 1
+    # Non-currency: pass through; BOTH treated as WEEK for index
+    if flag == "BOTH":
+        return "WEEK", 1
+    return expiry_flag, 1
+
+
 def fetch_option_candles(security_id: int, option_type: str, strike_offset: str,
                          from_date: str, to_date: str,
                          opt_segment: str = "NSE_FNO",
@@ -424,10 +462,21 @@ def fetch_option_candles(security_id: int, option_type: str, strike_offset: str,
     Fetch rolling option OHLCV via Dhan rollingoption endpoint.
     Works for OPTSTK (stocks), OPTIDX (indices), OPTCUR (currency), OPTFUT (commodities).
     Auto-chunked in 29-day windows.
+
+    Currency (OPTCUR) notes:
+      - expiry_flag="BOTH" or "WEEK"  → expiryFlag=WEEK, expiryCode=1 (nearest Friday)
+      - expiry_flag="MONTH"           → expiryFlag=MONTH, expiryCode=1 (last Friday)
+      - expiryCode=1 always selects the FRONT (nearest expiry) contract.
     """
     fmt = "%Y-%m-%d"
     start, end = datetime.strptime(from_date, fmt), datetime.strptime(to_date, fmt)
     side = "ce" if option_type == "CALL" else "pe"
+
+    # Resolve the correct expiryFlag and expiryCode for this instrument type
+    api_expiry_flag, api_expiry_code = _resolve_currency_expiry_params(
+        expiry_flag, opt_instrument
+    )
+
     frames, cursor = [], start
     while cursor <= end:
         chunk_end = min(cursor + timedelta(days=MAX_DAYS_PER_REQ), end)
@@ -436,8 +485,8 @@ def fetch_option_candles(security_id: int, option_type: str, strike_offset: str,
             "interval":        interval,
             "securityId":      security_id,
             "instrument":      opt_instrument,
-            "expiryFlag":      expiry_flag,
-            "expiryCode":      1,
+            "expiryFlag":      api_expiry_flag,
+            "expiryCode":      api_expiry_code,
             "strike":          strike_offset,
             "drvOptionType":   option_type,
             "requiredData":    ["open", "high", "low", "close",
@@ -920,43 +969,76 @@ def _close_trade(trade: Trade, ts: pd.Timestamp, exit_p: float,
              f"| reason={reason} | net_pnl=₹{net:+,.0f}")
 
 
-def _nearest_thursday(d: date) -> date:
-    """Return the nearest Thursday on or after date d (0=Mon … 6=Sun)."""
-    days_ahead = (3 - d.weekday()) % 7   # 3 = Thursday
+def _nearest_weekday_on_or_after(d: date, weekday: int) -> date:
+    """Return the nearest occurrence of weekday on or after d. 0=Mon..6=Sun."""
+    days_ahead = (weekday - d.weekday()) % 7
     return d + timedelta(days=days_ahead)
 
+def _nearest_thursday(d: date) -> date:
+    return _nearest_weekday_on_or_after(d, 3)
+
+def _nearest_friday(d: date) -> date:
+    return _nearest_weekday_on_or_after(d, 4)
 
 def _last_thursday_of_month(d: date) -> date:
-    """Return the last Thursday of the month that contains date d."""
-    # Go to the last day of this month, then walk back to Thursday
+    """Return the last Thursday of the month containing d."""
     if d.month == 12:
         last_day = date(d.year + 1, 1, 1) - timedelta(days=1)
     else:
         last_day = date(d.year, d.month + 1, 1) - timedelta(days=1)
-    offset = (last_day.weekday() - 3) % 7   # days to walk back to Thursday
+    offset = (last_day.weekday() - 3) % 7
+    return last_day - timedelta(days=offset)
+
+def _last_friday_of_month(d: date) -> date:
+    """Return the last Friday of the month containing d."""
+    if d.month == 12:
+        last_day = date(d.year + 1, 1, 1) - timedelta(days=1)
+    else:
+        last_day = date(d.year, d.month + 1, 1) - timedelta(days=1)
+    offset = (last_day.weekday() - 4) % 7
     return last_day - timedelta(days=offset)
 
 
-def compute_expiry_date(entry_ts: pd.Timestamp, expiry_flag: str) -> str:
+def compute_expiry_date(entry_ts: pd.Timestamp, expiry_flag: str,
+                        expiry_day: str = "THU") -> str:
     """
-    Derive the expiry date of the front option contract from the trade entry date.
+    Derive the expiry date of the FRONT option contract from the trade entry date.
 
-    WEEKLY  (WEEK)  — Index options (NIFTY, BANKNIFTY, SENSEX):
-        Expiry is every Thursday. Return the nearest Thursday on or after
-        the entry date. If entry is itself a Thursday, that day is the expiry.
+    Instrument        expiry_flag   expiry_day   Expiry rule
+    ---------------------------------------------------------------
+    Index (equity)    WEEK          THU          Nearest Thursday
+    Stock / Commodity MONTH         THU          Last Thursday of month
+    Currency (OPTCUR) BOTH          FRI          Nearest Friday (front contract)
+    Currency monthly  MONTH         FRI          Last Friday of month
 
-    MONTHLY (MONTH) — Stock options, currency, commodity:
-        Expiry is the last Thursday of the entry month.
+    Currency specifics (NSE circular):
+      - Weekly  : every Friday (11 serial weekly contracts active at once)
+      - Monthly : last Friday of the month
+      - When monthly expiry falls on a Friday, that week has no separate weekly
+        contract; the monthly IS the front weekly contract.
+      - expiry_flag=BOTH with expiry_day=FRI always returns the nearest Friday,
+        which is always the front contract regardless of weekly vs monthly.
 
-    Returns a string "YYYY-MM-DD".
+    Returns "YYYY-MM-DD".
     """
-    entry_date = entry_ts.date() if hasattr(entry_ts, "date") else pd.Timestamp(entry_ts).date()
+    entry_date = (entry_ts.date()
+                  if hasattr(entry_ts, "date")
+                  else pd.Timestamp(entry_ts).date())
     flag = expiry_flag.upper()
+    day  = (expiry_day or "THU").upper()
 
-    if flag in ("WEEK", "WEEKLY"):
-        exp = _nearest_thursday(entry_date)
-    else:   # MONTH, MONTHLY, or anything else
-        exp = _last_thursday_of_month(entry_date)
+    if day == "FRI":
+        # Currency options
+        if flag in ("BOTH", "WEEK", "WEEKLY"):
+            exp = _nearest_friday(entry_date)       # front weekly contract
+        else:                                        # MONTH
+            exp = _last_friday_of_month(entry_date) # last Friday of month
+    else:
+        # Equity index / stock / commodity (Thursday-based)
+        if flag in ("WEEK", "WEEKLY"):
+            exp = _nearest_thursday(entry_date)
+        else:
+            exp = _last_thursday_of_month(entry_date)
 
     return exp.strftime("%Y-%m-%d")
 
@@ -1157,7 +1239,12 @@ def run_one_instrument(name: str, universe_key: str, info: dict,
                 cost = entry_p * lot_sz * lots
 
                 if lots > 0 and cost <= equity:
-                    _eflag = info.get("expiry_flag", "MONTH")
+                    _eflag   = info.get("expiry_flag", "MONTH")
+                    _eday    = info.get("expiry_day",  "THU")
+                    # Currency: BOTH flag means the front contract is always weekly
+                    _etype   = ("WEEKLY"
+                                if _eflag.upper() in ("WEEK", "WEEKLY", "BOTH")
+                                else "MONTHLY")
                     open_trade = Trade(
                         symbol=name, universe=universe_key,
                         option_type=opt_type, signal=signal,
@@ -1169,8 +1256,8 @@ def run_one_instrument(name: str, universe_key: str, info: dict,
                         peak_premium=entry_p,
                         underlying_entry=close_p,
                         strike_price=get_option_strike(opt_df, ts),
-                        expiry_type="WEEKLY" if _eflag.upper() in ("WEEK","WEEKLY") else "MONTHLY",
-                        expiry_date=compute_expiry_date(ts, _eflag),
+                        expiry_type=_etype,
+                        expiry_date=compute_expiry_date(ts, _eflag, _eday),
                         entry_candle_open  = float(bar.get("open",  close_p)),
                         entry_candle_high  = float(bar.get("high",  close_p)),
                         entry_candle_low   = float(bar.get("low",   close_p)),
@@ -1524,6 +1611,18 @@ class PaperTrader:
             return False
         return MARKET_OPEN <= now.strftime("%H:%M") <= MARKET_CLOSE
 
+    def _instrument_market_open(self, info: dict) -> bool:
+        """Check if the market is open for this specific instrument.
+        Currency options trade 09:00–17:00; equity defaults to global constants.
+        """
+        now = datetime.now()
+        if now.weekday() >= 5:
+            return False
+        mopen  = info.get("market_open",  MARKET_OPEN)
+        mclose = info.get("market_close", MARKET_CLOSE)
+        t = now.strftime("%H:%M")
+        return mopen <= t <= mclose
+
     def _get_signal(self, name: str, info: dict) -> tuple:
         """Fetch recent price data, compute indicators, return (signal, latest_bar).
 
@@ -1555,7 +1654,12 @@ class PaperTrader:
             return 0, None
 
         wave = generate_signals(wave, tide)
-        latest = wave.iloc[-1]
+        # Use iloc[-2]: the last FULLY CLOSED candle.
+        # iloc[-1] is the still-forming bar whose indicators are incomplete,
+        # which is why backtest catches signals that paper/live miss.
+        if len(wave) < 2:
+            return 0, None
+        latest = wave.iloc[-2]
         return int(latest.get("signal", 0)), latest
 
     def _log_event(self, event: dict) -> None:
@@ -1597,6 +1701,11 @@ class PaperTrader:
     def _scan_one(self, name: str, uni_key: str, info: dict) -> None:
         """Process one symbol: manage open position or look for entry."""
         lot_sz = info["lot_size"]
+
+        # Skip if this instrument's market is not open right now
+        # (e.g. currency is open until 17:00 but equity closes at 15:30)
+        if not self._instrument_market_open(info):
+            return
 
         # ── Manage open position ────────────────────────────────────────────
         if name in self.positions:
@@ -1685,10 +1794,12 @@ class PaperTrader:
                         and prem <= pos.trail_premium):
                     reason = "trail_stop"
 
-            # EOD
+            # EOD — use per-instrument eod_hour/eod_minute when defined
             if reason is None:
-                now = datetime.now()
-                if now.hour == EOD_HOUR and now.minute >= EOD_MINUTE:
+                now    = datetime.now()
+                _eod_h = info.get("eod_hour",   EOD_HOUR)
+                _eod_m = info.get("eod_minute",  EOD_MINUTE)
+                if (now.hour == _eod_h and now.minute >= _eod_m) or now.hour > _eod_h:
                     reason = "eod"
 
             if reason:
@@ -1736,13 +1847,17 @@ class PaperTrader:
         self.positions[name] = pos
         self.equity -= cost
 
+        # SL level for paper is underlying-chart based (entry_candle_open);
+        # log the underlying entry open as the reference SL level.
+        _sl_level = pos.entry_candle_open
         event = {"type": "ENTRY", "symbol": name, "universe": uni_key,
                  "option_type": opt_type, "lots": lots,
-                 "entry_premium": entry_p, "sl": sl_p,
+                 "entry_premium": entry_p,
+                 "underlying_sl_level": _sl_level,
                  "time": datetime.now().isoformat()}
         self._log_event(event)
         log.info(f"  [PAPER ENTRY] {name} {opt_type} @ ₹{entry_p:.2f} "
-                 f"lots={lots} SL=₹{sl_p:.2f}")
+                 f"lots={lots} underlying_SL_level=₹{_sl_level:.2f}")
 
     def _close_position(self, name: str, pos: LivePosition,
                         exit_prem: float, reason: str, lot_sz: int) -> None:
@@ -1805,8 +1920,26 @@ class PaperTrader:
                 self.scan()
         except KeyboardInterrupt:
             log.info("Paper trading stopped by user.")
-            self._squareoff_all("manual_stop")
+            self._squareoff_all()
 
+    def _squareoff_all(self) -> None:
+        """Square off all open paper positions (called on Ctrl+C or kill switch)."""
+        for name, pos in list(self.positions.items()):
+            info = None
+            for sym, uni_key, inf in self.targets:
+                if sym == name:
+                    info = inf
+                    break
+            if not info:
+                continue
+            lot_sz = info["lot_size"]
+            prem = fetch_live_option_ltp(
+                pos.opt_sid, pos.option_type,
+                CE_OFFSETS[pos.strike_mode] if pos.option_type == "CE"
+                    else PE_OFFSETS[pos.strike_mode],
+                pos.opt_segment, pos.opt_instrument, pos.expiry_flag,
+            ) or pos.entry_premium
+            self._close_position(name, pos, prem, "manual_stop", lot_sz)
 
 # =============================================================================
 # SECTION 12 — LIVE TRADING ENGINE
@@ -1862,10 +1995,9 @@ class LiveTrader:
         return MARKET_OPEN <= now.strftime("%H:%M") <= MARKET_CLOSE
 
     def _get_signal(self, name: str, info: dict) -> tuple:
-        """Same signal logic as paper trader."""
-        today  = date.today()
-        from_d = (today - timedelta(days=DATA_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
-        to_d   = today.strftime("%Y-%m-%d")
+        """Same signal logic as paper trader — uses safe_from_date for robust date handling."""
+        from_d = safe_from_date(DATA_LOOKBACK_DAYS)
+        to_d   = date.today().strftime("%Y-%m-%d")
 
         wave_raw = fetch_price_15m(
             info["eq_sid"], from_d, to_d,
@@ -1887,7 +2019,11 @@ class LiveTrader:
             return 0, None
 
         wave = generate_signals(wave, tide)
-        latest = wave.iloc[-1]
+        # Use iloc[-2]: the last FULLY CLOSED candle.
+        # iloc[-1] is the still-forming bar — same fix as PaperTrader.
+        if len(wave) < 2:
+            return 0, None
+        latest = wave.iloc[-2]
         return int(latest.get("signal", 0)), latest
 
     def _place_order(self, security_id: str, exchange_segment: str,
@@ -1994,13 +2130,79 @@ class LiveTrader:
                 if new_trail > pos.trail_premium:
                     pos.trail_premium = round(new_trail, 2)
 
+            # HALF-EXIT: option premium rises >= 10% from entry (identical to backtest)
+            if not pos.half_done and pos.half_lots > 0:
+                prem_move_pct = (prem - pos.entry_premium) / pos.entry_premium * 100
+                if prem_move_pct >= HALF_EXIT_TRIGGER_PCT:
+                    exit_p   = apply_slippage(prem, "sell")
+                    half_qty = pos.half_lots * lot_sz
+                    half_pnl = (exit_p - pos.entry_premium) * half_qty
+                    pos.half_pnl      = half_pnl
+                    pos.sl_premium    = pos.entry_premium   # SL to breakeven
+                    pos.trail_premium = max(pos.trail_premium, pos.entry_premium)
+                    pos.half_done     = True
+                    log.info(f"[{name}] LIVE HALF-EXIT @ ₹{exit_p:.2f} "
+                             f"(premium +{prem_move_pct:.1f}%) "
+                             f"pnl=₹{half_pnl:+,.0f}")
+                    self._log_event({
+                        "event": "half_exit", "symbol": name,
+                        "option_type": pos.option_type,
+                        "exit_premium": exit_p, "half_pnl": half_pnl,
+                        "time": datetime.now().isoformat(),
+                    })
+
             reason = None
-            if prem <= pos.sl_premium:
-                reason = "stop_loss"
-            elif pos.trail_premium > pos.entry_premium and prem <= pos.trail_premium:
-                reason = "trail_stop"
-            elif datetime.now().hour == EOD_HOUR and datetime.now().minute >= EOD_MINUTE:
-                reason = "eod"
+
+            # UNDERLYING-CHART SL (same rule as backtest):
+            # CE: exit when underlying close < entry_candle_open
+            # PE: exit when underlying close > entry_candle_open
+            if reason is None and pos.entry_candle_open > 0:
+                from_d = safe_from_date(3)
+                to_d   = date.today().strftime("%Y-%m-%d")
+                ul_df  = fetch_price_15m(
+                    info["eq_sid"], from_d, to_d,
+                    segment=info["eq_segment"],
+                    instrument=info["eq_instrument"],
+                )
+                if not ul_df.empty:
+                    current_ul = float(ul_df["close"].iloc[-1])
+                    if pos.option_type == "CE" and current_ul < pos.entry_candle_open:
+                        reason = "underlying_sl"
+                    elif pos.option_type == "PE" and current_ul > pos.entry_candle_open:
+                        reason = "underlying_sl"
+
+            # EMA-5 exit (same as backtest and paper)
+            if reason is None:
+                from_d = safe_from_date(DATA_LOOKBACK_DAYS)
+                to_d   = date.today().strftime("%Y-%m-%d")
+                ul_df  = fetch_price_15m(
+                    info["eq_sid"], from_d, to_d,
+                    segment=info["eq_segment"],
+                    instrument=info["eq_instrument"],
+                )
+                if not ul_df.empty:
+                    ul_ind = compute_indicators(ul_df.copy())
+                    if not ul_ind.empty and "ema5" in ul_ind.columns:
+                        cur_close = float(ul_ind["close"].iloc[-1])
+                        cur_ema5  = float(ul_ind["ema5"].iloc[-1])
+                        if pos.option_type == "CE" and cur_close < cur_ema5:
+                            reason = "below_ema5"
+                        elif pos.option_type == "PE" and cur_close > cur_ema5:
+                            reason = "above_ema5"
+
+            # Trailing stop on premium
+            if reason is None:
+                if (pos.trail_premium > pos.entry_premium
+                        and prem <= pos.trail_premium):
+                    reason = "trail_stop"
+
+            # EOD square-off
+            if reason is None:
+                now    = datetime.now()
+                _eod_h = info.get("eod_hour",   EOD_HOUR)
+                _eod_m = info.get("eod_minute",  EOD_MINUTE)
+                if (now.hour == _eod_h and now.minute >= _eod_m) or now.hour > _eod_h:
+                    reason = "eod"
 
             if reason:
                 self._exit_position(name, pos, prem, reason, lot_sz, info)
@@ -2053,17 +2255,24 @@ class LiveTrader:
             opt_sid=info["opt_sid"], opt_segment=info["opt_segment"],
             opt_instrument=info["opt_instrument"], expiry_flag=info["expiry_flag"],
             entry_order_id=order_id,
+            # Store entry candle OHLC — entry_candle_open is the underlying SL level
+            entry_candle_open  = float(latest.get("open",  latest["close"])),
+            entry_candle_high  = float(latest.get("high",  latest["close"])),
+            entry_candle_low   = float(latest.get("low",   latest["close"])),
+            entry_candle_close = float(latest["close"]),
         )
         self.positions[name] = pos
         self.equity -= cost
 
         event = {"type": "LIVE_ENTRY", "symbol": name, "universe": uni_key,
                  "option_type": opt_type, "lots": lots, "qty": qty,
-                 "entry_premium": entry_p, "sl": sl_p, "order_id": order_id,
+                 "entry_premium": entry_p,
+                 "underlying_sl_level": pos.entry_candle_open,
+                 "order_id": order_id,
                  "time": datetime.now().isoformat()}
         self._log_event(event)
         log.info(f"  [LIVE ENTRY] {name} {opt_type} qty={qty} @ ₹{entry_p:.2f} "
-                 f"SL=₹{sl_p:.2f} orderId={order_id}")
+                 f"underlying_SL_level=₹{pos.entry_candle_open:.2f} orderId={order_id}")
 
     def _exit_position(self, name: str, pos: LivePosition,
                        exit_prem: float, reason: str,
@@ -2158,7 +2367,7 @@ class LiveTrader:
                 self.scan()
         except KeyboardInterrupt:
             log.warning("Live trading stopped by user — squaring off all positions.")
-            self._squareoff_all("manual_stop")
+            self._squareoff_all()
 
 
 # =============================================================================
